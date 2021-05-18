@@ -1,21 +1,33 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * <h2><center>&copy; Copyright (c) 2021 STMicroelectronics.
-  * All rights reserved.</center></h2>
-  *
-  * This software component is licensed by ST under BSD 3-Clause license,
-  * the "License"; You may not use this file except in compliance with the
-  * License. You may obtain a copy of the License at:
-  *                        opensource.org/licenses/BSD-3-Clause
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Esp8266-01 Test-Function
+ * Author          : Halil Gök
+ * websites        :https://embeddedsystemshalilgk.wordpress.com
+ * Youtube         :https://www.youtube.com/channel/UC8cJpAVnScqDzZ7IFs2tQMw
+ ******************************************************************************
+ * @attention
+ *ESP_Init();this function should be called after testing. ESP_Init() can be called
+ *this If hardware and software problems are not encountered.
+ *test_AT();first, you must query with the test_AT command.
+ *  USART2 -> PC
+ *  USART3 ->ESP8266
+ *We do the data retrieval part with interrupt.
+ * Don't forget to activate the interrupt.
+ *
+ * Functions ;
+ * test_AT(void) ->: It is the test function of the ESP8266-01 module
+ * for hardware communication. Sends the AT -> OK command via UART2.
+ * test_PC_to_ESP-> Transfers data from PC to ESP
+ * printf_PC(char *string)-> you can use this function to communicate
+ *  with the device or pc , to receive information.
+ *  printf_Esp(char *string)->this main function is used when writing a program.
+ *   printf_Esp("AT + XX\r \ n")
+ * ESP_Init(char *SSID,char *PASSWORD)->this function should be called after testing.
+ *  ESP_Init() can be called If hardware and software problems are not encountered.
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -38,29 +50,34 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define MAXIMUM_SIZE 750   // data transfer size
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
-DMA_HandleTypeDef hdma_usart2_rx;
-DMA_HandleTypeDef hdma_usart3_rx;
 
 /* USER CODE BEGIN PV */
-uint8_t esp_rx_buffer[10],pc_rx_buffer[10];
+char PC_buffer[MAXIMUM_SIZE];
+char Esp_buffer[25];
+volatile uint8_t esp_rx_buffer[MAXIMUM_SIZE];
+volatile uint8_t pc_rx_buffer[MAXIMUM_SIZE];
+volatile uint8_t old_pc_rx_buffer[MAXIMUM_SIZE];
+volatile uint8_t byte_pc;
+volatile uint8_t byte_esp;
+volatile uint8_t counter = 0;
+uint8_t esp_tx_buffer[100];
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
-void ESP_Init(char *SSID,char *PASSWORD);
 
-
+void ESP_Init(char *SSID, char *PASSWORD);
 void printf_Esp(char *string);
 void printf_PC(char *string);
 
@@ -72,9 +89,9 @@ void test_AT(void);
 
 /*
  * test_PC_to_ESP(): Transfers data from PC to ESP
+ * it does not require any input or output.Because it's an STM32 tool.
  */
 void test_PC_to_ESP(void);
-
 
 /* USER CODE END PFP */
 
@@ -111,27 +128,30 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-   HAL_UART_Receive_IT(&huart2, pc_rx_buffer,4);
-   HAL_UART_Receive_IT(&huart3, esp_rx_buffer,4);
+	/*incoming data is read piecemeal. */
+	HAL_UART_Receive_IT(&huart2, &byte_pc, 1);
+	HAL_UART_Receive_IT(&huart3, &byte_esp, 1);
 
-   test_AT();
+	test_AT();
+	HAL_Delay(2000);
+
+	//ESP_Init("samsung", "123456789");
+	// HAL_Delay(1000);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-
-	  test_PC_to_ESP();
-	  HAL_Delay(50);
+	while (1) {
+		//  test_AT();
+		test_PC_to_ESP();
+		HAL_Delay(100);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-  }
+	}
   /* USER CODE END 3 */
 }
 
@@ -246,25 +266,6 @@ static void MX_USART3_UART_Init(void)
 }
 
 /**
-  * Enable DMA controller clock
-  */
-static void MX_DMA_Init(void)
-{
-
-  /* DMA controller clock enable */
-  __HAL_RCC_DMA1_CLK_ENABLE();
-
-  /* DMA interrupt init */
-  /* DMA1_Stream1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
-  /* DMA1_Stream5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
-
-}
-
-/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -280,59 +281,107 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void ESP_Init(char *SSID,char *PASSWORD)
-{
+/*ESP_Init(char *SSID,char *PASSWORD): this function should be called after testing.
+ *  ESP_Init() can be called If hardware and software problems are not encountered.*/
+void ESP_Init(char *SSID, char *PASSWORD) {
+	printf_Esp("AT+CWMODE=1\r\n");  // STA mode on
+	printf_Esp("AT+CWQAP\r\n"); //closes earlier networks
+	//printf_Esp("AT+RST\n\r");  // RESET
 
+	sprintf(esp_tx_buffer, "AT+CWJAP=\"%s\",\"%s\"\r\n", SSID, PASSWORD);
+	printf_Esp((char*) esp_tx_buffer);
 
- //HAL_UART_Receive(&huart3, &veri_PC, 50, 200);
 }
-void test_AT(void)
-{
+void test_AT(void) {
 	//it is a test function that confirms that esp communicates hardware with the pc.
-    //UART3 -> ESP UART2 -> PC
+	//UART3 -> ESP UART2 -> PC
+	printf_PC("***** ESP8266-01 Test Software *****\n");
+	printf_PC("** It can't be learned without making mistakes. **\n");
 
-	printf_Esp("AT\r\n");  //Printed in ESP module
-	printf_PC("\n AT commend sent. Response = ");
-    printf_PC((char*)esp_rx_buffer);
-
-	esp_rx_buffer[0]='\0';//to avoid overwriting the array in a new loop
+	printf_Esp("AT\r\n");   // At command sent to ESP
+	HAL_Delay(50);
+	strcpy(old_pc_rx_buffer, esp_rx_buffer); // to back up esp's response
+	printf_PC("\nAT commend sent. Response =\n "); //
+	HAL_Delay(50);
+	printf_PC((char*) old_pc_rx_buffer); //  the copied array (old_pc_rx_buffer) is sent to the PC.
+	memset(old_pc_rx_buffer, 0, sizeof(old_pc_rx_buffer)); //reset the array
+	memset(pc_rx_buffer, 0, sizeof(pc_rx_buffer));         //***
+	memset(esp_rx_buffer, 0, sizeof(esp_rx_buffer));       //**
 }
 
-void test_PC_to_ESP(void)
-{
+/*test_PC_to_ESP(void):This function is usually used to communicate
+ * directly with esp for testing purposes.You can run AT commands in this function.*/
+void test_PC_to_ESP(void) {
 
-	if(pc_rx_buffer[0]=='A' && pc_rx_buffer[1]=='T'){ //checks buffer
-	printf_Esp(((char*)pc_rx_buffer));
-	printf_PC((char*)esp_rx_buffer);
-	pc_rx_buffer[0]='\0';
-	esp_rx_buffer[0]='\0';
+	HAL_Delay(50);
+	printf_Esp((char*) pc_rx_buffer);
+	HAL_Delay(50);
+	strcpy(old_pc_rx_buffer, esp_rx_buffer);
+	HAL_Delay(50);
+	printf_PC((char*) old_pc_rx_buffer);
+	HAL_Delay(50);
+	memset(old_pc_rx_buffer, 0, sizeof(old_pc_rx_buffer));
+}
+/*printf_PC(char *string): you can use this function to communicate
+ *  with the device or pc , to receive information.*/
+void printf_PC(char *string) {
+	counter = 0;
+	byte_pc = 0;
+	byte_esp = 0;
+
+	if (string[0] != '\0')     //used to prevent blank characters from printing.
+			{
+
+		sprintf(PC_buffer, string);
+		HAL_UART_Transmit(&huart2, (uint8_t*) PC_buffer, strlen(PC_buffer),
+				1000);
+		HAL_Delay(50);
+		memset(PC_buffer, 0, sizeof(PC_buffer));  // reset the array
+		memset(esp_rx_buffer, 0, sizeof(esp_rx_buffer));
 	}
-	pc_rx_buffer[0]='\0';
-	esp_rx_buffer[0]='\0';
 }
-void printf_PC(char *string)
-{
-	char PC_buffer[100];
+void printf_Esp(char *string) {
+	counter = 0;
+	byte_pc = 0;
+	byte_esp = 0;
 
-	sprintf(PC_buffer,string);
-	HAL_UART_Transmit(&huart2,(uint8_t*)PC_buffer,strlen(PC_buffer),1000);
-	HAL_Delay(50);
+	if (string[0] != '\0') //used to prevent blank characters from printing.
+			{
 
-	PC_buffer[0]='\0';
+		memset(Esp_buffer, 0, sizeof(Esp_buffer));
+		sprintf(Esp_buffer, string);
+
+		HAL_UART_Transmit(&huart3, (uint8_t*) Esp_buffer, strlen(Esp_buffer),
+				1000);
+		HAL_Delay(50);
+		memset(Esp_buffer, 0, sizeof(Esp_buffer));
+
+		memset(pc_rx_buffer, 0, sizeof(pc_rx_buffer));
+	}
+
 }
-void printf_Esp(char *string)
-{
-	char Esp_buffer[25];
-	sprintf(Esp_buffer,string);
-	HAL_UART_Transmit(&huart3,(uint8_t*)Esp_buffer,sizeof(Esp_buffer),1000);
-	HAL_Delay(50);
-	Esp_buffer[0]='\0';
+/*HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart):
+ * this function is standard uart.C is the function.
+ *  This function is called every time the interrupt enters
+ *   the interrupt.We do 1 byte to 1 byte reading. We'll record
+ *   it in the series. */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+	if (huart->Instance == USART2) //queried which uart is used
+	{
+		HAL_UART_Receive_IT(&huart2, &byte_pc, 1);
 
-}
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-	 HAL_UART_Receive_IT(&huart3, esp_rx_buffer,4);
-	 HAL_UART_Receive_IT(&huart2, pc_rx_buffer, 4);
+		pc_rx_buffer[counter] = byte_pc;
+		counter++;
+
+	}
+
+	if (huart->Instance == USART3) {
+		HAL_UART_Receive_IT(&huart3, &byte_esp, 1);
+
+		esp_rx_buffer[counter] = byte_esp;
+
+		counter++;
+	}
 }
 /* USER CODE END 4 */
 
@@ -343,11 +392,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+	/* User can add his own implementation to report the HAL error return state */
+	__disable_irq();
+	while (1) {
+	}
   /* USER CODE END Error_Handler_Debug */
 }
 
