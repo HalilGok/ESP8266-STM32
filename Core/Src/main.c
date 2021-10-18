@@ -36,7 +36,7 @@
 /* USER CODE BEGIN Includes */
 #include <string.h>
 #include <stdio.h>
-
+#include "esp8266-01.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -60,7 +60,8 @@ const char* User_Password = "****";
 const char* TOPIC = "***";
 
 
-#define MAXIMUM_SIZE 750   // data transfer size
+#define Test_uartPC USART2
+#define Test_uartESP USART3
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -68,27 +69,9 @@ UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-char PC_buffer[MAXIMUM_SIZE];
-char Esp_buffer[25];
-volatile uint8_t esp_rx_buffer[MAXIMUM_SIZE];
-volatile uint8_t pc_rx_buffer[MAXIMUM_SIZE];
-volatile uint8_t old_pc_rx_buffer[MAXIMUM_SIZE];
-uint8_t byte_pc;
-uint8_t byte_esp;
-volatile uint8_t counter = 0;
-uint8_t esp_tx_buffer[100];
+ItemUnit Test_uartPc,Test_uartEsp;
 
 
-char data_buffer[100];
-uint16_t ProtocolNameLength;
-uint16_t ClientIDLength;
-uint8_t connect = 0x10,publishCon = 0x30,subscribeCon = 0x82;
-char *protocolName = "MQTT";
-char *clientID = "Halil";
-uint8_t level = 0x04;
-uint16_t keepAlive =90;
-uint16_t packetID = 0x01;
-uint8_t Qos = 0x00;
 
 /* USER CODE END PV */
 
@@ -99,31 +82,10 @@ static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
-void ESP_Init(const char *SSID,const char *PASSWORD);
-
-void printf_Esp(const char *string);
-void printf_PC(const char *string);
 
 
 
-/* test_AT() : It is the test function of the ESP8266-01 module
- * for hardware communication. Sends the AT -> OK command via UART2.
- */
-void test_AT(void);
 
-/*
- * test_PC_to_ESP(): Transfers data from PC to ESP
- * it does not require any input or output.Because it's an STM32 tool.
- */
-void test_PC_to_ESP(void);
-
-void Connect_Broker(const char *Ip ,const char *Port);
-
-void Connect_Secure_Broker(const char *Ip,const char *Port,const char *userName,const char *password);
-
-void Read_Message_MQTT();
-void publish_MQTT(char *topic, char *message);
-void Subscribe_MQTT(const char *topic);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -162,20 +124,28 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+
+	__printf_ctor(&Test_uartPc, &huart2);
+	__printf_ctor(&Test_uartEsp, &huart3);
+
+	TEST(&Test_uartPc);
+	//TEST(&Test_uartEsp);
+
 	/*incoming data is read piecemeal. */
-	HAL_UART_Receive_IT(&huart2, &byte_pc, 1);
-	HAL_UART_Receive_IT(&huart3, &byte_esp, 1);
-	 printf_PC("Program is starting..\n");
-	test_AT();
-	HAL_Delay(2000);
-	printf_PC("Please wait...\n");
-	ESP_Init(WiFi_Name,Wifi_Password);
-	HAL_Delay(5000);
-	 // Connect_Broker("192.168.31.203","1883");
-    Connect_Secure_Broker(IP,Port,User_Name,User_Password);
-	HAL_Delay(2000);
-	Subscribe_MQTT(TOPIC);
-	HAL_Delay(2000);
+	HAL_UART_Receive_IT(Test_uartPc.huart, &Test_uartPc.byteRx, 1);
+	HAL_UART_Receive_IT(Test_uartEsp.huart, &Test_uartEsp.byteRx, 1);
+	HAL_Delay(700);
+	TEST_AT(&Test_uartEsp, &Test_uartPc);
+	HAL_Delay(700);
+	EspInit(&Test_uartEsp, WiFi_Name, Wifi_Password, &Test_uartPc);
+	HAL_Delay(700);
+	Connect_Secure_Broker(&Test_uartEsp, IP, Port, User_Name, User_Password,
+			&Test_uartPc);
+	HAL_Delay(700);
+	Subscribe_MQTT(&Test_uartEsp, TOPIC, &Test_uartPc);
+	HAL_Delay(700);
+	clearBuffer(&Test_uartEsp);
+	publish_MQTT(&Test_uartEsp, (char*)TOPIC,"Hello World");
 
   /* USER CODE END 2 */
 
@@ -183,9 +153,9 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 	while (1)
 	{
-		Read_Message_MQTT();
-		//test_PC_to_ESP();
-		HAL_Delay(100);
+
+		Read_Message_MQTT(&Test_uartEsp, &Test_uartPc);
+	   HAL_Delay(50);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -319,248 +289,34 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-/*ESP_Init(char *SSID,char *PASSWORD): this function should be called after testing.
- *  ESP_Init() can be called If hardware and software problems are not encountered.*/
-void ESP_Init(const char *SSID,const char *PASSWORD) {
-	printf_Esp("AT+CWMODE=1\r\n");  // STA mode on
-	printf_Esp("AT+CWQAP\r\n"); //closes earlier networks
-	//printf_Esp("AT+RST\n\r");  // RESET
-
-	sprintf((char*)esp_tx_buffer, "AT+CWJAP=\"%s\",\"%s\"\r\n", SSID, PASSWORD);
-	printf_Esp((char*) esp_tx_buffer);
-    printf_PC("network connected..\n");
-
-}
 
 
-void test_AT(void) {
-	//it is a test function that confirms that esp communicates hardware with the pc.
-	//UART3 -> ESP UART2 -> PC
-	printf_PC("***** ESP8266-01 Test Software *****\n");
-	printf_PC("** It can't be learned without making mistakes. **\n");
-
-	printf_Esp("AT\r\n");   // At command sent to ESP
-	HAL_Delay(50);
-	strcpy((char*)old_pc_rx_buffer, (char*)esp_rx_buffer); // to back up esp's response
-	printf_PC("\nAT commend sent. Response =\n "); //
-	HAL_Delay(50);
-	printf_PC((char*) old_pc_rx_buffer); //  the copied array (old_pc_rx_buffer) is sent to the PC.
-	memset((char*)old_pc_rx_buffer, 0, sizeof(old_pc_rx_buffer)); //reset the array
-	memset((char*)pc_rx_buffer, 0, sizeof(pc_rx_buffer));         //***
-	memset((char*)esp_rx_buffer, 0, sizeof(esp_rx_buffer));       //**
-}
-
-
-void Connect_Broker(const char *Ip , const char *Port)
-{
-	uint8_t flag = 0x02;   // 02--> sifresiz
-
-	   printf_Esp("AT+CIPCLOSE\r\n");
-	   HAL_Delay(250);
-	   printf_Esp("AT+CIPMUX=0\r\n");
-	   HAL_Delay(250);
-	   printf_Esp("AT+CIFSR\r\n"); //**
-	   HAL_Delay(250);
-	   sprintf((char*)esp_tx_buffer,"AT+CIPSTART=\"TCP\",\"%s\",%s\r\n",Ip,Port);
-	   HAL_UART_Transmit(&huart3,(uint8_t *)esp_tx_buffer,sprintf((char*)esp_tx_buffer,"AT+CIPSTART=\"TCP\",\"%s\",%s\r\n",Ip,Port),5000);
-	   HAL_Delay(2000);
-	//connect packet
-
-	ProtocolNameLength = strlen(protocolName);
-	ClientIDLength     = strlen(clientID);
-	uint8_t Remainlength;
-	Remainlength = 2+ProtocolNameLength+6+ClientIDLength;
-	uint16_t length = sprintf((char*)esp_tx_buffer,"%c%c%c%c%s%c%c%c%c%c%c%s",(char)connect,(char)Remainlength,(char)(ProtocolNameLength << 8),(char)ProtocolNameLength,protocolName,(char)level,(char)flag,(char)(keepAlive << 8),(char)keepAlive,(char)(ClientIDLength << 8),(char)ClientIDLength,clientID);
-
-	HAL_UART_Transmit(&huart3,(uint8_t *)esp_tx_buffer,sprintf((char*)esp_tx_buffer,"AT+CIPSEND=%d\r\n",length),1000);
-	HAL_Delay(100);
-	HAL_UART_Transmit(&huart3,(uint8_t *)esp_tx_buffer,sprintf((char*)esp_tx_buffer,"%c%c%c%c%s%c%c%c%c%c%c%s",(char)connect,(char)Remainlength,(char)(ProtocolNameLength << 8),(char)ProtocolNameLength,protocolName,(char)level,(char)flag,(char)(keepAlive << 8),(char)keepAlive,(char)(ClientIDLength << 8),(char)ClientIDLength,clientID),5000);
-	printf_PC("connected to the server..\n");
-
-}
-
-void Connect_Secure_Broker(const char *Ip,const char *Port, const char *userName,const char *password)
-{
-	    uint16_t usernamelength;
-		uint16_t passwordlength;
-		uint8_t flag = 0xC2;
-
-	       printf_Esp("AT+CIPCLOSE\r\n");
-		   HAL_Delay(250);
-		   printf_Esp("AT+CIPMUX=0\r\n");
-		   HAL_Delay(250);
-		   printf_Esp("AT+CIFSR\r\n"); //**
-		   HAL_Delay(250);
-		   sprintf((char*)esp_tx_buffer,"AT+CIPSTART=\"TCP\",\"%s\",%s\r\n",Ip,Port);
-		   HAL_UART_Transmit(&huart3,(uint8_t *)esp_tx_buffer,sprintf((char*)esp_tx_buffer,"AT+CIPSTART=\"TCP\",\"%s\",%s\r\n",Ip,Port),5000);
-		   HAL_Delay(2000);
-
-           //connect packet
-		   ProtocolNameLength = strlen(protocolName);
-		     ClientIDLength = strlen(clientID);
-		     usernamelength = strlen(userName);
-		     passwordlength = strlen(password);
-		      uint8_t Remainlength;
-		     	Remainlength = 2+ProtocolNameLength+6+ClientIDLength+2+usernamelength+2+passwordlength;
-		     	uint16_t length = sprintf((char*)esp_tx_buffer,"%c%c%c%c%s%c%c%c%c%c%c%s%c%c%s%c%c%s",(char)connect,(char)Remainlength,(char)(ProtocolNameLength << 8),(char)ProtocolNameLength,protocolName,(char)level,(char)flag,(char)(keepAlive << 8),(char)keepAlive,(char)(ClientIDLength << 8),(char)ClientIDLength,clientID,(char)(usernamelength << 8),(char)usernamelength,userName,(char)(passwordlength << 8),(char)passwordlength,password);
-
-		     	HAL_UART_Transmit(&huart3,(uint8_t *)esp_tx_buffer,sprintf((char*)esp_tx_buffer,"AT+CIPSEND=%d\r\n",length),1000);
-		     	HAL_Delay(250);
-		     	HAL_UART_Transmit(&huart3,(uint8_t *)esp_tx_buffer,sprintf((char*)esp_tx_buffer,"%c%c%c%c%s%c%c%c%c%c%c%s%c%c%s%c%c%s",(char)connect,(char)Remainlength,(char)(ProtocolNameLength << 8),(char)ProtocolNameLength,protocolName,(char)level,(char)flag,(char)(keepAlive << 8),(char)keepAlive,(char)(ClientIDLength << 8),(char)ClientIDLength,clientID,(char)(usernamelength << 8),(char)usernamelength,userName,(char)(passwordlength << 8),(char)passwordlength,password),5000);
-		      HAL_Delay(250);
-             printf_PC("connected to the server..\n");
-}
-
-void Subscribe_MQTT(const char *topic)
-{
-	uint16_t TopicLength = strlen(topic);
-	uint8_t RemainLength = 2+2+TopicLength+1; // packetIDlength(2) + topiclengthdata(2)+topiclength+Qos
-	uint16_t length = sprintf((char*)esp_tx_buffer,"%c%c%c%c%c%c%s%c",(char)subscribeCon,(char)RemainLength,(char)(packetID << 8),(char)packetID,(char)(TopicLength << 8),(char)TopicLength,topic,(char)Qos);
-	HAL_UART_Transmit(&huart3,(uint8_t *)esp_tx_buffer,sprintf((char*)esp_tx_buffer,"AT+CIPSEND=%d\r\n",length),1000);
-	HAL_Delay(100);
-	HAL_UART_Transmit(&huart3,(uint8_t *)esp_tx_buffer,sprintf((char*)esp_tx_buffer,"%c%c%c%c%c%c%s%c",(char)subscribeCon,(char)RemainLength,(char)(packetID << 8),(char)packetID,(char)(TopicLength << 8),(char)TopicLength,topic,(char)Qos),5000);
-    printf_PC("'");printf_PC(topic);printf_PC("'");printf_PC("subscribed\n");
-}
-void publish_MQTT(char *topic, char *message)
-{
-
-	uint16_t topiclength = strlen(topic);
-	uint8_t remainlength = 2+topiclength+strlen(message);
-	int length = sprintf((char*)esp_tx_buffer,"%c%c%c%c%s%s",(char)publishCon,(char)remainlength,(char)(topiclength << 8),(char)topiclength,topic,message);
-	HAL_UART_Transmit(&huart3,(uint8_t *)esp_tx_buffer,sprintf((char*)esp_tx_buffer,"AT+CIPSEND=%d\r\n",length),100);
-	HAL_Delay(100);
-	HAL_UART_Transmit(&huart3,(uint8_t *)esp_tx_buffer,sprintf((char*)esp_tx_buffer,"%c%c%c%c%s%s",(char)publishCon,(char)remainlength,(char)(topiclength << 8),(char)topiclength,topic,message),5000);
-	HAL_Delay(100);
-
-}
-void Read_Message_MQTT()
-{
-	int remain_length = 0, message_length = 0, topic_length = 0;
-	char message[100];
-	HAL_UART_AbortReceive_IT(&huart3);
-	for (int i = 0; i < sizeof(esp_rx_buffer); i++) {
-		if (esp_rx_buffer[i] == 0x30) {
-			remain_length = esp_rx_buffer[i + 1];
-			topic_length = esp_rx_buffer[i + 2] + esp_rx_buffer[i + 3];
-			message_length = remain_length - (topic_length + 2);
-			for (int j = 0; j < message_length; j++) {
-
-				message[j] = esp_rx_buffer[i + 4 + topic_length + j];
-
-			}
-			break;
-		}
-	}
-	for (int a = 0; a < message_length; a++) {
-		data_buffer[a] = message[a];
-	}
-	if (data_buffer[0] != '\0') {
-		printf_PC("Message:");
-		printf_PC(data_buffer);
-		printf_PC("\n");
-	}
-
-		if(strcmp(data_buffer,"test mqtt") == 0)
-		{
-			publish_MQTT("/gokhalil723@gmail.com/test1","Test successful");
-		}
-
-		if(message[0] == 'O' && message[1] == 'N')
-		{
-			publish_MQTT("/gokhalil723@gmail.com/State","Enable");
-		}
-		if(message[0] == 'O' && message[1] == 'F' && message[2] == 'F')
-		{
-			publish_MQTT("/gokhalil723@gmail.com/State","Disable");
-		}
-
-		memset((char*)esp_rx_buffer,0,sizeof(esp_rx_buffer)); 											// clear buffer
-		memset(message,0,sizeof(message));
-		memset(data_buffer,0,sizeof(data_buffer));
-		byte_esp=0;
-		HAL_UART_Receive_IT(&huart3,&byte_esp,1);
-}
-
-
-/*test_PC_to_ESP(void):This function is usually used to communicate
- * directly with esp for testing purposes.You can run AT commands in this function.*/
-void test_PC_to_ESP(void)
-{
-
-	     HAL_Delay(50);
-	     printf_Esp((char*)pc_rx_buffer);// pcden gelen veriyi espye yollar
-	     HAL_Delay(50);
-	     strcpy((char*)old_pc_rx_buffer,(char*)esp_rx_buffer);
-	     HAL_Delay(50);
-	     printf_PC((char*)old_pc_rx_buffer);
-	     HAL_Delay(50);
-         memset((char*)old_pc_rx_buffer, 0, sizeof(old_pc_rx_buffer));
-
-}
-
-/*printf_PC(char *string): you can use this function to communicate
- *  with the device or pc , to receive information.*/
-
-
-void printf_PC(const char *string)
-{
-	counter = 0;
-	byte_pc = 0;
-	byte_esp=0;
-
-	if (string[0] !='\0') {
-
-		sprintf(PC_buffer, string);
-		HAL_UART_Transmit(&huart2, (uint8_t*) PC_buffer, strlen(PC_buffer),	1000);
-		HAL_Delay(50);
-		memset(PC_buffer, 0, sizeof(PC_buffer));
-		memset((char*)esp_rx_buffer,0, sizeof(esp_rx_buffer));
-
-
-}
-}
-void printf_Esp(const char *string)
-{
-
-	     counter=0;
-	     byte_pc=0;
-	     byte_esp=0;
-
-	if(string[0] !='\0'){
-
-    memset(Esp_buffer, 0, sizeof(Esp_buffer));
-	sprintf(Esp_buffer,string);
-
-	HAL_UART_Transmit(&huart3,(uint8_t*)Esp_buffer,strlen(Esp_buffer),1000);
-	HAL_Delay(50);
-	 memset(Esp_buffer, 0, sizeof(Esp_buffer));
-
-	 memset((char*)pc_rx_buffer, 0, sizeof(pc_rx_buffer));
-	}
-}
 /*HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart):
  * this function is standard uart.C is the function.
  *  This function is called every time the interrupt enters
  *   the interrupt.We do 1 byte to 1 byte reading. We'll record
  *   it in the series. */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	if (huart->Instance == USART2) //queried which uart is used
+	if (huart->Instance == Test_uartPC) //queried which uart is used
 	{
-		HAL_UART_Receive_IT(&huart2, &byte_pc, 1);
+		HAL_UART_Receive_IT(Test_uartPc.huart, &Test_uartPc.byteRx, 1);
 
-		pc_rx_buffer[counter] = byte_pc;
-		counter++;
+		Test_uartPc.rxBuffer[Test_uartPc.rxbufferIndex] = Test_uartPc.byteRx;
+		Test_uartPc.rxbufferIndex++;
 
 	}
 
-	if (huart->Instance == USART3) {
-		HAL_UART_Receive_IT(&huart3, &byte_esp, 1);
+	if (huart->Instance == Test_uartESP) {
+		HAL_UART_Receive_IT(Test_uartEsp.huart,&Test_uartEsp.byteRx, 1);
 
-		esp_rx_buffer[counter] = byte_esp;
+		Test_uartEsp.rxBuffer[Test_uartEsp.rxbufferIndex] = Test_uartEsp.byteRx;
+		Test_uartEsp.rxbufferIndex++;
 
-		counter++;
 	}
 }
+
+
+
 /* USER CODE END 4 */
 
 /**

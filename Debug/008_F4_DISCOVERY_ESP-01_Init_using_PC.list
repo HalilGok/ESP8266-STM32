@@ -482,8 +482,8 @@ int main(void)
  80005c6:	f000 fc7d 	bl	8000ec4 <printf_PC>
 	test_AT();
  80005ca:	f000 f965 	bl	8000898 <test_AT>
-	HAL_Delay(2000);
- 80005ce:	f44f 60fa 	mov.w	r0, #2000	; 0x7d0
+	HAL_Delay(1000);
+ 80005ce:	f44f 707a 	mov.w	r0, #1000	; 0x3e8
  80005d2:	f000 ff25 	bl	8001420 <HAL_Delay>
 	printf_PC("Please wait...\n");
  80005d6:	481b      	ldr	r0, [pc, #108]	; (8000644 <main+0xac>)
