@@ -15,17 +15,6 @@
  *  USART3 ->ESP8266
  *We do the data retrieval part with interrupt.
  * Don't forget to activate the interrupt.
- *
- * Functions ;
- * test_AT(void) ->: It is the test function of the ESP8266-01 module
- * for hardware communication. Sends the AT -> OK command via UART2.
- * test_PC_to_ESP-> Transfers data from PC to ESP
- * printf_PC(char *string)-> you can use this function to communicate
- *  with the device or pc , to receive information.
- *  printf_Esp(char *string)->this main function is used when writing a program.
- *   printf_Esp("AT + XX\r \ n")
- * ESP_Init(char *SSID,char *PASSWORD)->this function should be called after testing.
- *  ESP_Init() can be called If hardware and software problems are not encountered.
  ******************************************************************************
  */
 /* USER CODE END Header */

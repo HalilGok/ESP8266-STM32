@@ -2,7 +2,7 @@
  * esp8266-01.c
  *
  *  Created on: Aug 22, 2021
- *      Author: theen
+ *      Author: Halil Gök
  */
 
 #include "esp8266-01.h"
@@ -51,7 +51,7 @@ void TEST_AT(ItemUnit *esp, ItemUnit *pc) {
 //	__printf(esp,"AT+RST\r\n");   // At+RST command sent to ESP
 //	__printf(pc,"Resetting \r\n");
 	HAL_Delay(2000);
-	__printf(pc, "AT komutu atildi.");
+	__printf(pc, "AT command has been sent.");
 	while (ESPEventCase == 0) {
 		__printf(esp, "AT\r\n");
 		HAL_Delay(500);
@@ -59,12 +59,12 @@ void TEST_AT(ItemUnit *esp, ItemUnit *pc) {
 		//   __printf(pc,esp->rxBuffer);
 		if (strstr((char*) (esp->rxBuffer), "OK") != NULL) {
 			__printf(pc, "\r\n");
-			__printf(pc, "Modüle erişildi.\r\n");
+			__printf(pc, "The module has been accessed.\r\n");
 			ESPEventCase = 1;
 		}
 
 		if (strstr((char*) (esp->rxBuffer), "OK") == NULL && stateTry == 5) {
-			__printf(pc, "\r\nModul bulunamadi.");
+			__printf(pc, "\r\nThe module was not found.");
 			stateTry = 0;
 			HAL_Delay(500);
 		}
@@ -95,18 +95,18 @@ void EspInit(ItemUnit *const me, const char *SSID, const char *PASSWORD,
 
 		if (strstr((char*) (me->rxBuffer), "+CWMODE:1") != NULL) {
 
-			__printf(pc, "MODE Ayar Dogru\n"); //1 'se application modda old. öğrendik
+			__printf(pc, "The MODE Setting is Correct\n"); //1 'se application modd
 			ESPInitCase = 2;
 		} else {
-			// Fabrika ayarlari olarak 2 geliyor biz onu 1 yapip reset komutu ile tamamlariz.
+
 			__printf(me, "AT+CWMODE=1\r\n");
 			HAL_Delay(700);
-			__printf(pc, "MOD Degistirildi.\n");
+			__printf(pc, "The MODE has been Changed.\n");
 			ESPInitCase = 2;
 		}
 		clearBuffer(me);
 	}
-	while (ESPInitCase == 2) /********* AT+CWQAP= **********/ //Şayet modül bir ağa bağlı ise o ağdan ayrılır.
+	while (ESPInitCase == 2)
 	{
 
 		__printf(me, "AT+CWQAP\r\n");
@@ -114,21 +114,20 @@ void EspInit(ItemUnit *const me, const char *SSID, const char *PASSWORD,
 		ESPInitCase = 3;
 		clearBuffer(me);
 	}
-	while (ESPInitCase == 3) /********* AT+CWJAP="SSID","PASSWD" **********/
+	while (ESPInitCase == 3)
 	{
-		//	sprintf(tx_buffer11, "AT+CWJAP=\"%s\",\"%s\"\r\n", ag_adi, parola);
 		sprintf((char*) me->buffer, "AT+CWJAP=\"%s\",\"%s\"\r\n", SSID,
 				PASSWORD);
 		__printf(me, me->buffer);
 		HAL_Delay(1500);
 
 		if (strstr((char*) (me->rxBuffer), "OK") != NULL) {
-			__printf(pc, "Modeme Baglanti yapildi\n");
+			__printf(pc, "network connection has been made\n");
 			ESPInitCase = 4;
 			clearBuffer(me);
 
 		} else {
-			__printf(pc, "Modeme Baglanti Bekleniyor\n");
+			__printf(pc, "network connection is expected\n");
 			HAL_Delay(500);
 
 		}
@@ -139,7 +138,7 @@ void EspInit(ItemUnit *const me, const char *SSID, const char *PASSWORD,
 void connect_Broker(ItemUnit *const me, const char *Ip, const char *Port,
 		ItemUnit *const pc) {
 	uint8_t ESPBrokerInitCase = 0;
-	uint8_t flag = 0x02;   // 02--> sifresiz
+	uint8_t flag = 0x02;   // 02--> unencrypted
 	__printf(pc,"0.0");
 	while (ESPBrokerInitCase == 0) {
 		__printf(me, "AT+CIPCLOSE\r\n");
@@ -167,18 +166,16 @@ void connect_Broker(ItemUnit *const me, const char *Ip, const char *Port,
 		__printf(me, "AT+CIFSR\r\n");
 		HAL_Delay(1000);
 
-		// IP alana kadar error bilgisi gonderir. Onu ayiririz. =)
-		if (strstr((char*) (me->rxBuffer), "ERROR") == NULL) // error varsa null dönmez ife girmez elseye girer
-		//"else"de wifi_rx_buffer temizlenir.error gelmeyene kadar   elseye gider.
+		// It sends error information until it receives an IP. We'll split it up. =)
+		if (strstr((char*) (me->rxBuffer), "ERROR") == NULL)
+
 		{
-			__printf(pc, "Alinan IP = \n"); // Gelen bilginin 11.karakterinden itibaren IP adresi yaziyor.
+			__printf(pc, "Alinan IP = \n"); // 11 Of the incoming information.it says the IP address from the character.
 			__printf(pc, (char*) (me->rxBuffer + 11));
 			ESPBrokerInitCase = 3;
 		}
-       else {  // ERROR der ise tekrar dene
-
-			__printf(pc, "Tekrar Dene.\n");
-
+       else {
+			__printf(pc, "Try Again.\n");
 
 			}
 		clearBuffer(me);
@@ -192,22 +189,21 @@ void connect_Broker(ItemUnit *const me, const char *Ip, const char *Port,
 						Ip, Port), 5000);
 		HAL_Delay(2000);
 
-		__printf(pc, "TCP Baglanti istegi gonderildi\n\n");
+		__printf(pc, "TCP Connection request has been sent\n\n");
 		HAL_Delay(200);
 		if (strstr((char*) (me->rxBuffer), "OK") != NULL) {
 
-			__printf(pc, "Site ile baglanti kuruldu\n\n");
+			__printf(pc, "A connection has been established with the site\n\n");
 
 			ESPBrokerInitCase = 4;
 
-		} else {  // ERROR der ise tekrar dene
+		} else {
 			HAL_Delay(1000);
-			__printf(pc, "Tekrar Dene.\n");
+			__printf(pc, "Try Again.\n");
 
 		}
 
 		clearBuffer(me);
-
 	}
 	ProtocolNameLength = strlen(protocolName);
 	ClientIDLength = strlen(clientID);
@@ -265,11 +261,10 @@ void Connect_Secure_Broker(ItemUnit *const me, const char *Ip, const char *Port,
 		__printf(me, "AT+CIFSR\r\n");
 		HAL_Delay(700);
 
-		// IP alana kadar error bilgisi gonderir. Onu ayiririz. =)
-//	if (strstr((char*) (me->rxBuffer), "ERROR") == NULL) // error varsa null dönmez ife girmez elseye girer
-		//"else"de wifi_rx_buffer temizlenir.error gelmeyene kadar   elseye gider.
+
+//	if (strstr((char*) (me->rxBuffer), "ERROR") == NULL)
 		{
-			__printf(pc, "Alinan IP = \n"); // Gelen bilginin 11.karakterinden itibaren IP adresi yaziyor.
+			__printf(pc, "Alinan IP = \n");
 			__printf(pc, (char*) (me->rxBuffer + 11));
 			ESPBrokerInitCase2 = 3;
 //		} else {  // ERROR der ise tekrar dene
@@ -288,21 +283,19 @@ void Connect_Secure_Broker(ItemUnit *const me, const char *Ip, const char *Port,
 						Ip, Port), 5000);
 		HAL_Delay(1500);
 
-		__printf(pc, "TCP Baglanti istegi gonderildi\n\n");
+		__printf(pc, "TCP Connection request has been sent\n\n");
 		HAL_Delay(200);
 		if (strstr((char*) (me->rxBuffer), "OK") != NULL) {
 
-			__printf(pc, "Site ile baglanti kuruldu\n\n");
+			__printf(pc, "A connection has been established with the site\n\n");
 
 			ESPBrokerInitCase2 = 4;
 
-		} else {  // ERROR der ise tekrar dene
+		} else {
 			HAL_Delay(1000);
-			__printf(pc, "Tekrar Dene.\n");
+			__printf(pc, "Try Again.\n");
 
 		}
-
-		//clearBuffer(me);
 
 	}
 	ProtocolNameLength = strlen(protocolName);
@@ -336,7 +329,7 @@ void Connect_Secure_Broker(ItemUnit *const me, const char *Ip, const char *Port,
 					(char) (passwordlength << 8), (char) passwordlength,
 					password), 5000);
 	HAL_Delay(250);
-	__printf(pc, "Server'a baglandi..\n");
+	__printf(pc, "Connected to the server..\n");
 	clearBuffer(me);
 
 }
@@ -407,22 +400,20 @@ void Read_Message_MQTT(ItemUnit *const me, ItemUnit *const pc) {
 	}
 
 	if (strcmp(data_buffer, "test mqtt") == 0) {
-		publish_MQTT(me, "/gokhalil723@gmail.com/test1", "Test successful");
+		publish_MQTT(me, "**SUBJECT**", "Test successful");
 	}
 
 	if (message[0] == 'O' && message[1] == 'N') {
-		publish_MQTT(me, "/gokhalil723@gmail.com/State", "Enable");
+		publish_MQTT(me, "**SUBJECT**", "Enable");
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, ENABLE);
 	}
 	if (message[0] == 'O' && message[1] == 'F' && message[2] == 'F') {
-		publish_MQTT(me, "/gokhalil723@gmail.com/State", "Disable");
+		publish_MQTT(me, "**SUBJECT**", "Disable");
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, DISABLE);
 	}
-//	memset((char*) esp_rx_buffer, 0, sizeof(esp_rx_buffer)); 	// clear buffer
 	memset(message, 0, sizeof(message));
 	clearBuffer(me);
 	memset(data_buffer, 0, sizeof(data_buffer));
-//	byte_esp = 0;
 	//HAL_UART_Receive_IT(&huart3, &byte_esp, 1);
 }
 void clearBuffer(ItemUnit *const me)
